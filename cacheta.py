@@ -51,7 +51,20 @@ def excluir(nome):
 def reiniciar_turno():
     st.session_state.acoes = {}
 
+def selecionar_acao(nome, acao):
+    # garante vencedor único
+    if acao == "Venceu":
+        for k in list(st.session_state.acoes.keys()):
+            if st.session_state.acoes.get(k) == "Venceu":
+                st.session_state.acoes[k] = ""
+    st.session_state.acoes[nome] = acao
+
 def finalizar_turno():
+
+    vencedores = [k for k,v in st.session_state.acoes.items() if v=="Venceu"]
+    if len(vencedores) != 1:
+        st.warning("Selecione exatamente 1 vencedor.")
+        return
 
     linha = {"Turno": st.session_state.turno}
 
@@ -76,7 +89,8 @@ def finalizar_turno():
         if j["pontos"] < 0:
             j["pontos"] = 0
 
-        linha[nome] = j["pontos"]
+        # salva pontos + ação (ex: "8|Perdeu")
+        linha[nome] = f"{j['pontos']}|{acao}"
 
     st.session_state.historico_turnos.append(linha)
 
@@ -94,7 +108,6 @@ def finalizar_turno():
 def novo_jogo():
     for j in st.session_state.jogadores:
         j["pontos"] = 10
-
     st.session_state.turno = 1
     st.session_state.historico_turnos = []
     st.session_state.acoes = {}
@@ -114,7 +127,6 @@ with aba_jogo:
     st.title("CACHETA")
 
     nome = st.text_input("Adicionar jogador")
-
     if st.button("Adicionar"):
         if nome:
             adicionar(nome)
@@ -136,14 +148,15 @@ with aba_jogo:
             label_visibility="collapsed"
         )
 
-        acao = c3.radio(
+        escolha = c3.radio(
             "",
-            ["Venceu","Perdeu","Desistiu"],
+            ["","Venceu","Perdeu"],
             horizontal=True,
             key=f"acao_{j['nome']}"
         )
 
-        st.session_state.acoes[j["nome"]] = acao
+        if escolha:
+            selecionar_acao(j["nome"], escolha)
 
         if c4.button("🗑", key=j["nome"]+"x"):
             excluir(j["nome"])
@@ -165,15 +178,31 @@ with aba_jogo:
         if st.button("Novo Jogo"):
             novo_jogo()
 
-    # ===== TABELA =====
+    # ===== TABELA COLORIDA =====
     if st.session_state.historico_turnos:
 
         df = pd.DataFrame(st.session_state.historico_turnos).set_index("Turno")
-        st.subheader("Placar por Turno")
-        st.dataframe(df, use_container_width=True)
+
+        def estilo(valor):
+            if isinstance(valor,str) and "|" in valor:
+                pts, acao = valor.split("|")
+                if acao == "Venceu":
+                    return "background-color:#2ecc71;color:black"
+                if acao == "Perdeu":
+                    return "background-color:#e74c3c;color:white"
+                if acao == "Desistiu":
+                    return "background-color:#f1c40f;color:black"
+            return ""
+
+        styled = df.style.applymap(estilo)
+
+        st.subheader("Placar por Turno (colorido)")
+        st.dataframe(styled, use_container_width=True)
 
         # ===== GRÁFICO =====
-        df_m = df.reset_index().melt(id_vars="Turno", var_name="Jogador", value_name="Pontos")
+        # remove ação, fica só pontos
+        df_pts = df.applymap(lambda x: int(x.split("|")[0]))
+        df_m = df_pts.reset_index().melt(id_vars="Turno", var_name="Jogador", value_name="Pontos")
 
         fig = px.line(df_m, x="Turno", y="Pontos", color="Jogador", markers=True)
         st.subheader("Gráfico de Desempenho")
@@ -190,9 +219,7 @@ with aba_stats:
     dados = []
 
     for nome, s in st.session_state.stats.items():
-
         t = max(s["turnos"],1)
-
         dados.append({
             "Jogador": nome,
             "Turnos": s["turnos"],
