@@ -77,25 +77,28 @@ def adicionar():
     salvar_estado()
 
 def excluir(nome):
-    st.session_state.jogadores = [j for j in st.session_state.jogadores if j["nome"] != nome]
+    st.session_state.jogadores = [
+        j for j in st.session_state.jogadores if j["nome"] != nome
+    ]
     salvar_estado()
 
 def reiniciar_turno():
     st.session_state.acoes = {}
+    for j in st.session_state.jogadores:
+        chave = f"acao_{j['nome']}"
+        if chave in st.session_state:
+            del st.session_state[chave]
 
 def selecionar_acao(nome, acao):
-
-    # garante apenas 1 vencedor
     if acao == "Venceu":
         for k in list(st.session_state.acoes.keys()):
             if st.session_state.acoes.get(k) == "Venceu":
                 st.session_state.acoes[k] = ""
-
     st.session_state.acoes[nome] = acao
 
 def finalizar_turno():
 
-    vencedores = [k for k,v in st.session_state.acoes.items() if v == "Venceu"]
+    vencedores = [k for k, v in st.session_state.acoes.items() if v == "Venceu"]
     if len(vencedores) != 1:
         st.warning("Selecione exatamente 1 vencedor.")
         return
@@ -104,7 +107,6 @@ def finalizar_turno():
     linha_a = {}
 
     for j in st.session_state.jogadores:
-
         nome = j["nome"]
         acao = st.session_state.acoes.get(nome, "Desistiu")
 
@@ -135,7 +137,6 @@ def finalizar_turno():
 def novo_jogo():
     for j in st.session_state.jogadores:
         j["pontos"] = 10
-
     st.session_state.turno = 1
     st.session_state.historico_turnos = []
     st.session_state.historico_acoes = []
@@ -143,7 +144,7 @@ def novo_jogo():
     salvar_estado()
 
 # =================================================
-# UI
+# INTERFACE
 # =================================================
 
 aba_jogo, aba_stats = st.tabs(["🎮 Jogo", "📊 Estatísticas"])
@@ -155,30 +156,47 @@ with aba_jogo:
     st.text_input("Adicionar jogador", key="novo_nome")
     st.button("Adicionar", on_click=adicionar)
 
-    st.session_state.jogadores = sorted(st.session_state.jogadores, key=lambda x: x["ordem"])
+    st.session_state.jogadores = sorted(
+        st.session_state.jogadores, key=lambda x: x["ordem"]
+    )
 
     st.subheader(f"Turno {st.session_state.turno}")
 
     for j in st.session_state.jogadores:
 
-        c1,c2,c3,c4 = st.columns([3,1,4,1])
+        c1, c2, c3, c4 = st.columns([3, 1, 4, 1])
 
         c1.write(f"**{j['nome']}** — {j['pontos']} pts")
 
-        j["ordem"] = c2.number_input("", value=j["ordem"], key=j["nome"]+"_ordem", label_visibility="collapsed")
+        j["ordem"] = c2.number_input(
+            "", value=j["ordem"], key=j["nome"] + "_ordem",
+            label_visibility="collapsed"
+        )
 
-        escolha = c3.radio("", ["","Venceu","Perdeu"], horizontal=True, key=f"acao_{j['nome']}")
+        escolha = c3.radio(
+            "", ["", "Venceu", "Perdeu"],
+            horizontal=True,
+            key=f"acao_{j['nome']}"
+        )
+
         if escolha:
             selecionar_acao(j["nome"], escolha)
 
-        if c4.button("🗑", key=j["nome"]+"x"):
+        if c4.button("🗑", key=j["nome"] + "_x"):
             excluir(j["nome"])
             st.experimental_rerun()
 
-    colA,colB,colC = st.columns(3)
-    if colA.button("Finalizar Turno"): finalizar_turno()
-    if colB.button("Reiniciar Turno"): reiniciar_turno()
-    if colC.button("Novo Jogo"): novo_jogo()
+    colA, colB, colC = st.columns(3)
+    if colA.button("Finalizar Turno"):
+        finalizar_turno()
+    if colB.button("Reiniciar Turno"):
+        reiniciar_turno()
+    if colC.button("Novo Jogo"):
+        novo_jogo()
+
+    # =====================
+    # TABELA COLORIDA
+    # =====================
 
     if st.session_state.historico_turnos:
 
@@ -189,28 +207,41 @@ with aba_jogo:
 
         for i in range(len(df)):
             for col in df.columns:
+                acao = df_ac.iloc[i][col]
                 cor = "#f1c40f"
-                if df_ac.iloc[i][col] == "Venceu": cor = "#2ecc71"
-                if df_ac.iloc[i][col] == "Perdeu": cor = "#e74c3c"
-                styled = styled.set_properties(subset=pd.IndexSlice[[df.index[i]],[col]], **{"background-color": cor})
+                if acao == "Venceu":
+                    cor = "#2ecc71"
+                elif acao == "Perdeu":
+                    cor = "#e74c3c"
+
+                styled = styled.set_properties(
+                    subset=pd.IndexSlice[[df.index[i]], [col]],
+                    **{
+                        "background-color": cor,
+                        "color": "black",
+                        "font-weight": "bold"
+                    }
+                )
 
         st.subheader("Placar por Turno")
         st.dataframe(styled, use_container_width=True)
 
-        df_m = df.reset_index().melt(id_vars="Turno", var_name="Jogador", value_name="Pontos")
+        df_m = df.reset_index().melt(
+            id_vars="Turno", var_name="Jogador", value_name="Pontos"
+        )
         fig = px.line(df_m, x="Turno", y="Pontos", color="Jogador", markers=True)
         st.plotly_chart(fig, use_container_width=True)
 
 with aba_stats:
 
     dados = []
-    for n,s in st.session_state.stats.items():
-        t = max(s["turnos"],1)
+    for n, s in st.session_state.stats.items():
+        t = max(s["turnos"], 1)
         dados.append({
             "Jogador": n,
-            "% Vitórias": round(s["vitorias"]/t*100,1),
-            "% Derrotas": round(s["derrotas"]/t*100,1),
-            "% Desistências": round(s["desistencias"]/t*100,1),
+            "% Vitórias": round(s["vitorias"] / t * 100, 1),
+            "% Derrotas": round(s["derrotas"] / t * 100, 1),
+            "% Desistências": round(s["desistencias"] / t * 100, 1),
             "Turnos": s["turnos"]
         })
 
