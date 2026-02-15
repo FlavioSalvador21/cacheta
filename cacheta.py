@@ -20,7 +20,6 @@ if "acoes" not in st.session_state:
 if "historico_turnos" not in st.session_state:
     st.session_state.historico_turnos = []
 
-# histórico geral por jogador (permanece entre jogos)
 if "stats" not in st.session_state:
     st.session_state.stats = {}
 
@@ -47,6 +46,9 @@ def adicionar(nome):
 
 def excluir(nome):
     st.session_state.jogadores = [j for j in st.session_state.jogadores if j["nome"] != nome]
+
+def reiniciar_turno():
+    st.session_state.acoes = {}
 
 def finalizar_turno():
 
@@ -77,15 +79,13 @@ def finalizar_turno():
 
     st.session_state.historico_turnos.append(linha)
 
-    # verifica vencedores (quem sobrou com pontos > 0)
     vivos = [j for j in st.session_state.jogadores if j["pontos"] > 0]
     mortos = [j for j in st.session_state.jogadores if j["pontos"] == 0]
 
     if vivos and len(mortos) == len(st.session_state.jogadores) - len(vivos):
-        if len(vivos) >= 1 and len(mortos) >= 1:
-            for v in vivos:
-                st.session_state.stats[v["nome"]]["titulos"] += 1
-            st.success("🏆 Jogo encerrado! Vencedores: " + ", ".join(v["nome"] for v in vivos))
+        for v in vivos:
+            st.session_state.stats[v["nome"]]["titulos"] += 1
+        st.success("🏆 Jogo encerrado! Vencedores: " + ", ".join(v["nome"] for v in vivos))
 
     st.session_state.turno += 1
     st.session_state.acoes = {}
@@ -97,6 +97,17 @@ def novo_jogo():
     st.session_state.turno = 1
     st.session_state.historico_turnos = []
     st.session_state.acoes = {}
+
+# =====================
+# CSS (cores dos botões)
+# =====================
+
+st.markdown("""
+<style>
+.venceu button {background:#2ecc71 !important; color:black;}
+.perdeu button {background:#e74c3c !important; color:white;}
+</style>
+""", unsafe_allow_html=True)
 
 # =====================
 # INTERFACE
@@ -124,17 +135,30 @@ with aba_jogo:
 
     for j in st.session_state.jogadores:
 
+        acao_atual = st.session_state.acoes.get(j["nome"], "")
+
         c1,c2,c3,c4,c5 = st.columns([3,1,2,2,1])
 
         c1.write(f"**{j['nome']}** — {j['pontos']} pts")
 
-        j["ordem"] = c2.number_input("Ordem", value=j["ordem"], key=j["nome"]+"_ordem", label_visibility="collapsed")
+        j["ordem"] = c2.number_input(
+            "Ordem",
+            value=j["ordem"],
+            key=j["nome"]+"_ordem",
+            label_visibility="collapsed"
+        )
 
-        if c3.button("Venceu", key=j["nome"]+"v"):
-            st.session_state.acoes[j["nome"]] = "venceu"
+        with c3:
+            st.markdown("<div class='venceu'>" if acao_atual=="venceu" else "<div>", unsafe_allow_html=True)
+            if st.button("Venceu", key=j["nome"]+"v"):
+                st.session_state.acoes[j["nome"]] = "venceu"
+            st.markdown("</div>", unsafe_allow_html=True)
 
-        if c4.button("Perdeu", key=j["nome"]+"p"):
-            st.session_state.acoes[j["nome"]] = "perdeu"
+        with c4:
+            st.markdown("<div class='perdeu'>" if acao_atual=="perdeu" else "<div>", unsafe_allow_html=True)
+            if st.button("Perdeu", key=j["nome"]+"p"):
+                st.session_state.acoes[j["nome"]] = "perdeu"
+            st.markdown("</div>", unsafe_allow_html=True)
 
         if c5.button("🗑", key=j["nome"]+"x"):
             excluir(j["nome"])
@@ -142,11 +166,19 @@ with aba_jogo:
 
     st.divider()
 
-    if st.button("Finalizar Turno"):
-        finalizar_turno()
+    colA,colB,colC = st.columns(3)
 
-    if st.button("Novo Jogo"):
-        novo_jogo()
+    with colA:
+        if st.button("Finalizar Turno"):
+            finalizar_turno()
+
+    with colB:
+        if st.button("Reiniciar Turno"):
+            reiniciar_turno()
+
+    with colC:
+        if st.button("Novo Jogo"):
+            novo_jogo()
 
     # ===== TABELA =====
     if st.session_state.historico_turnos:
@@ -163,32 +195,27 @@ with aba_jogo:
         st.plotly_chart(fig, use_container_width=True)
 
 # ======================================================
-# ABA ESTATÍSTICAS GERAIS
+# ABA ESTATÍSTICAS
 # ======================================================
 
 with aba_stats:
 
     st.title("Estatísticas Gerais")
 
-    if st.session_state.stats:
+    dados = []
 
-        dados = []
+    for nome, s in st.session_state.stats.items():
 
-        for nome, s in st.session_state.stats.items():
+        t = max(s["turnos"],1)
 
-            t = max(s["turnos"],1)
+        dados.append({
+            "Jogador": nome,
+            "Turnos": s["turnos"],
+            "% Vitórias": round(s["vitorias"]/t*100,1),
+            "% Derrotas": round(s["derrotas"]/t*100,1),
+            "% Desistências": round(s["desistencias"]/t*100,1),
+            "Títulos": s["titulos"]
+        })
 
-            dados.append({
-                "Jogador": nome,
-                "Turnos": s["turnos"],
-                "% Vitórias": round(s["vitorias"]/t*100,1),
-                "% Derrotas": round(s["derrotas"]/t*100,1),
-                "% Desistências": round(s["desistencias"]/t*100,1),
-                "Títulos": s["titulos"]
-            })
-
-        df_stats = pd.DataFrame(dados)
-        st.dataframe(df_stats, use_container_width=True)
-
-    else:
-        st.info("Nenhum dado ainda.")
+    if dados:
+        st.dataframe(pd.DataFrame(dados), use_container_width=True)
