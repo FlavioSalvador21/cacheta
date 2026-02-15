@@ -49,7 +49,11 @@ def adicionar():
     nome = st.session_state.novo_nome
     if not nome:
         return
-    st.session_state.jogadores.append({"nome": nome, "pontos": 10, "ordem": len(st.session_state.jogadores)+1})
+    st.session_state.jogadores.append({
+        "nome": nome,
+        "pontos": 10,
+        "ordem": len(st.session_state.jogadores)+1
+    })
     st.session_state.novo_nome = ""
     salvar()
 
@@ -90,7 +94,8 @@ def finalizar_turno():
         linha[nome] = j["pontos"]
         linha_acoes[nome] = acao
 
-        st.session_state[f"sel_{nome}"] = None  # reset selectbox
+        # reset selectbox
+        st.session_state[f"sel_{nome}"] = None
 
     st.session_state.historico.append(linha)
     st.session_state.historico_acoes.append(linha_acoes)
@@ -129,7 +134,12 @@ for j in st.session_state.jogadores:
 
     c1.write(j["nome"])
 
-    j["ordem"] = c2.number_input("", value=j["ordem"], key=f"ord_{j['nome']}", label_visibility="collapsed")
+    j["ordem"] = c2.number_input(
+        "",
+        value=j["ordem"],
+        key=f"ord_{j['nome']}",
+        label_visibility="collapsed"
+    )
 
     c3.selectbox("", [None, "Venceu", "Perdeu"], key=f"sel_{j['nome']}")
 
@@ -155,13 +165,25 @@ if st.session_state.historico:
     for i in range(len(df)):
         for col in df.columns:
             cor = "#f1c40f"
-            if ac.iloc[i][col] == "Venceu": cor = "#2ecc71"
-            if ac.iloc[i][col] == "Perdeu": cor = "#e74c3c"
+            if ac.iloc[i][col] == "Venceu":
+                cor = "#2ecc71"
+            if ac.iloc[i][col] == "Perdeu":
+                cor = "#e74c3c"
 
             sty = sty.set_properties(
                 subset=pd.IndexSlice[[df.index[i]],[col]],
-                **{"background-color": cor, "color": "black", "font-weight": "bold"}
+                **{
+                    "background-color": cor,
+                    "color": "black",
+                    "font-weight": "bold",
+                    "text-align": "center"   # <<< AQUI está o alinhamento central
+                }
             )
+
+    # também centraliza cabeçalhos
+    sty = sty.set_table_styles(
+        [{"selector": "th", "props": [("text-align", "center")]}]
+    )
 
     st.subheader("Placar por turno")
     st.dataframe(sty, use_container_width=True)
