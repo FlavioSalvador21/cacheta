@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import json, os
 
-st.set_page_config(page_title="CACHETA", layout="wide")
+st.set_page_config(page_title="CACHETA - FLÁVIO", layout="wide")
 
 ARQ = "cacheta_state.json"
 
@@ -22,12 +22,15 @@ def salvar():
 
 def carregar():
     if os.path.exists(ARQ):
-        with open(ARQ) as f:
-            d = json.load(f)
-            st.session_state.jogadores = d.get("jogadores", [])
-            st.session_state.turno = d.get("turno", 1)
-            st.session_state.historico = d.get("historico", [])
-            st.session_state.historico_acoes = d.get("acoes", [])
+        try:
+            with open(ARQ) as f:
+                d = json.load(f)
+                st.session_state.jogadores = d.get("jogadores", [])
+                st.session_state.turno = d.get("turno", 1)
+                st.session_state.historico = d.get("historico", [])
+                st.session_state.historico_acoes = d.get("acoes", [])
+        except:
+            pass
 
 # =====================================================
 # Estado inicial
@@ -42,7 +45,7 @@ if "init" not in st.session_state:
     carregar()
 
 # =====================================================
-# Funções
+# Funções de Ação
 # =====================================================
 
 def adicionar():
@@ -52,7 +55,8 @@ def adicionar():
     st.session_state.jogadores.append({
         "nome": nome,
         "pontos": 10,
-        "ordem": len(st.session_state.jogadores)+1
+        "ordem": len(st.session_state.jogadores) + 1,
+        "pago": False  # Inicia como não pago
     })
     st.session_state.novo_nome = ""
     salvar()
@@ -62,7 +66,6 @@ def excluir(nome):
     salvar()
 
 def finalizar_turno():
-
     selecoes = {}
     vencedores = []
 
@@ -90,12 +93,8 @@ def finalizar_turno():
             j["pontos"] -= 1
 
         j["pontos"] = max(j["pontos"], 0)
-
         linha[nome] = j["pontos"]
         linha_acoes[nome] = acao
-
-        # reset selectbox
-        st.session_state[f"sel_{nome}"] = None
 
     st.session_state.historico.append(linha)
     st.session_state.historico_acoes.append(linha_acoes)
@@ -105,89 +104,110 @@ def finalizar_turno():
 def novo_jogo():
     for j in st.session_state.jogadores:
         j["pontos"] = 10
+        j["pago"] = False  # RESETA O PAGAMENTO APENAS AQUI
     st.session_state.turno = 1
     st.session_state.historico = []
     st.session_state.historico_acoes = []
     salvar()
 
 # =====================================================
-# UI
+# UI - Interface do Usuário
 # =====================================================
 
-st.title("CACHETA")
+st.title("🃏 CACHETA MANAGER")
 
-st.text_input("Adicionar jogador", key="novo_nome")
-st.button("Adicionar", on_click=adicionar)
+with st.expander("➕ Adicionar Jogador"):
+    col_add1, col_add2 = st.columns([3, 1])
+    col_add1.text_input("Nome do jogador", key="novo_nome", label_visibility="collapsed")
+    col_add2.button("Adicionar", on_click=adicionar, use_container_width=True)
 
-# Cabeçalho tipo tabela
-h1,h2,h3,h4 = st.columns([3,1,3,1])
+# Cabeçalho da Tabela de Controle
+st.markdown("---")
+h1, h2, h3, h4, h5 = st.columns([2, 1, 2, 1, 1])
 h1.markdown("**Jogador**")
 h2.markdown("**Ordem**")
-h3.markdown("**Resultado do turno**")
-h4.markdown("**Excluir**")
+h3.markdown("**Ação do Turno**")
+h4.markdown("**Pago?**")
+h5.markdown("**Excluir**")
 
+# Ordenação dos jogadores
 st.session_state.jogadores = sorted(st.session_state.jogadores, key=lambda x: x["ordem"])
 
 for j in st.session_state.jogadores:
+    c1, c2, c3, c4, c5 = st.columns([2, 1, 2, 1, 1])
+    
+    c1.write(f"**{j['nome']}**")
 
-    c1,c2,c3,c4 = st.columns([3,1,3,1])
+    # Controle de Ordem
+    nova_ordem = c2.number_input("", value=j["ordem"], key=f"ord_{j['nome']}", label_visibility="collapsed")
+    if nova_ordem != j["ordem"]:
+        j["ordem"] = nova_ordem
+        salvar()
 
-    c1.write(j["nome"])
+    # Seleção de resultado
+    c3.selectbox("", [None, "Venceu", "Perdeu", "Desistiu"], key=f"sel_{j['nome']}", label_visibility="collapsed")
 
-    j["ordem"] = c2.number_input(
-        "",
-        value=j["ordem"],
-        key=f"ord_{j['nome']}",
-        label_visibility="collapsed"
-    )
+    # Controle de Pagamento (Persistente)
+    pago_db = j.get("pago", False)
+    check_pago = c4.checkbox("Sim", value=pago_db, key=f"pago_chk_{j['nome']}")
+    if check_pago != pago_db:
+        j["pago"] = check_pago
+        salvar()
 
-    c3.selectbox("", [None, "Venceu", "Perdeu"], key=f"sel_{j['nome']}")
-
-    if c4.button("🗑", key=f"x_{j['nome']}"):
+    # Excluir
+    if c5.button("🗑", key=f"del_{j['nome']}"):
         excluir(j["nome"])
-        st.experimental_rerun()
+        st.rerun()
 
-b1,b2 = st.columns(2)
-b1.button("Finalizar Turno", on_click=finalizar_turno)
-b2.button("Novo Jogo", on_click=novo_jogo)
+st.markdown("---")
+b1, b2 = st.columns(2)
+b1.button("✅ Finalizar Turno", on_click=finalizar_turno, use_container_width=True)
+b2.button("🔄 Novo Jogo / Resetar Tudo", on_click=novo_jogo, use_container_width=True)
 
 # =====================================================
-# Placar colorido + gráfico
+# Placar e Gráficos
 # =====================================================
 
 if st.session_state.historico:
-
+    st.subheader("📊 Placar Geral por Turno")
+    
     df = pd.DataFrame(st.session_state.historico).set_index("Turno")
     ac = pd.DataFrame(st.session_state.historico_acoes)
 
-    sty = df.style
+    # Estilização da Tabela
+    def style_placar(styler):
+        for i in range(len(df)):
+            for col in df.columns:
+                acao = ac.iloc[i][col]
+                cor = "#f1c40f"  # Amarelo (Desistiu)
+                texto = "black"
+                if acao == "Venceu":
+                    cor = "#2ecc71"; texto = "white"
+                elif acao == "Perdeu":
+                    cor = "#e74c3c"; texto = "white"
+                
+                styler.set_properties(
+                    subset=pd.IndexSlice[[df.index[i]], [col]],
+                    **{
+                        "background-color": cor,
+                        "color": texto,
+                        "font-weight": "bold",
+                        "text-align": "center"
+                    }
+                )
+        return styler
 
-    for i in range(len(df)):
-        for col in df.columns:
-            cor = "#f1c40f"
-            if ac.iloc[i][col] == "Venceu":
-                cor = "#2ecc71"
-            if ac.iloc[i][col] == "Perdeu":
-                cor = "#e74c3c"
-
-            sty = sty.set_properties(
-                subset=pd.IndexSlice[[df.index[i]],[col]],
-                **{
-                    "background-color": cor,
-                    "color": "black",
-                    "font-weight": "bold",
-                    "text-align": "center"   # <<< AQUI está o alinhamento central
-                }
-            )
-
-    # também centraliza cabeçalhos
-    sty = sty.set_table_styles(
-        [{"selector": "th", "props": [("text-align", "center")]}]
+    # Aplicar estilos e centralizar cabeçalhos
+    sty = df.style.pipe(style_placar).set_table_styles(
+        [{"selector": "th", "props": [("text-align", "center"), ("background-color", "#f8f9fa")]}]
     )
 
-    st.subheader("Placar por turno")
-    st.dataframe(sty, use_container_width=True)
+    st.table(sty)
 
+    # Gráfico de Evolução
+    st.subheader("📈 Evolução das Pontuações")
     dm = df.reset_index().melt(id_vars="Turno", var_name="Jogador", value_name="Pontos")
-    fig = px.line(dm, x="Turno", y="Pontos", color="Jogador", markers=True)
+    fig = px.line(dm, x="Turno", y="Pontos", color="Jogador", markers=True, template="plotly_white")
     st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("Inicie a partida para visualizar o histórico de pontos.")
