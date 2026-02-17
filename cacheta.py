@@ -3,12 +3,12 @@ import pandas as pd
 import plotly.express as px
 import json, os
 
-st.set_page_config(page_title="CACHETA - FLÁVIO", layout="wide")
+st.set_page_config(page_title="CACHETA MANAGER - FLÁVIO", layout="wide")
 
 ARQ = "cacheta_state.json"
 
 # =====================================================
-# Persistência
+# Persistência de Dados
 # =====================================================
 
 def salvar():
@@ -41,7 +41,7 @@ if "init" not in st.session_state:
     st.session_state.init = True
 
 # =====================================================
-# Funções de Ação
+# Funções de Lógica
 # =====================================================
 
 def adicionar():
@@ -59,9 +59,8 @@ def excluir(nome):
 
 def finalizar_turno():
     vencedores = [j["nome"] for j in st.session_state.jogadores if st.session_state.get(f"sel_{j['nome']}") == "Venceu"]
-
     if len(vencedores) != 1:
-        st.warning("Selecione exatamente 1 vencedor.")
+        st.warning("Selecione exatamente 1 vencedor para encerrar o turno.")
         return
 
     linha = {"Turno": st.session_state.turno}
@@ -86,26 +85,26 @@ def finalizar_turno():
 def novo_jogo():
     for j in st.session_state.jogadores:
         j["pontos"] = 10
-        j["pago"] = False
+        j["pago"] = False # O pagamento só volta a 'Não Pago' aqui
     st.session_state.turno = 1
     st.session_state.historico = []
     st.session_state.historico_acoes = []
     salvar()
 
 # =====================================================
-# UI - Interface Principal
+# Interface (UI)
 # =====================================================
 
 st.title("🃏 CACHETA MANAGER")
 
-with st.expander("➕ Adicionar Jogador"):
+with st.expander("➕ Gerenciar Jogadores"):
     c_a1, c_a2 = st.columns([3, 1])
-    c_a1.text_input("Nome", key="novo_nome", label_visibility="collapsed")
+    c_a1.text_input("Nome do novo jogador", key="novo_nome", label_visibility="collapsed")
     c_a2.button("Adicionar", on_click=adicionar, use_container_width=True)
 
 st.markdown("---")
 h1, h2, h3, h4, h5 = st.columns([2, 1, 2, 1, 1])
-h1.write("**Jogador**"); h2.write("**Ordem**"); h3.write("**Ação**"); h4.write("**Pago?**"); h5.write("**Excluir**")
+h1.write("**Jogador**"); h2.write("**Ordem**"); h3.write("**Resultado do Turno**"); h4.write("**Pago?**"); h5.write("**Excluir**")
 
 st.session_state.jogadores = sorted(st.session_state.jogadores, key=lambda x: x["ordem"])
 
@@ -116,7 +115,7 @@ for j in st.session_state.jogadores:
     c3.selectbox("", [None, "Venceu", "Perdeu", "Desistiu"], key=f"sel_{j['nome']}", label_visibility="collapsed")
     
     pago_val = j.get("pago", False)
-    if c4.checkbox("Sim", value=pago_val, key=f"pago_chk_{j['nome']}") != pago_val:
+    if c4.checkbox("Pago", value=pago_val, key=f"pago_chk_{j['nome']}") != pago_val:
         j["pago"] = not pago_val
         salvar()
         
@@ -127,78 +126,75 @@ for j in st.session_state.jogadores:
 st.markdown("---")
 b1, b2 = st.columns(2)
 b1.button("✅ Finalizar Turno", on_click=finalizar_turno, use_container_width=True)
-b2.button("🔄 Novo Jogo", on_click=novo_jogo, use_container_width=True)
+b2.button("🔄 Novo Jogo / Resetar Pagamentos", on_click=novo_jogo, use_container_width=True)
 
 # =====================================================
-# Placar com Lógica de Liderança por Turno
+# Placar Final Estilizado
 # =====================================================
 
 if st.session_state.historico:
-    st.subheader("📊 Placar por Turno")
+    st.subheader("📊 Placar e Histórico")
     
     df = pd.DataFrame(st.session_state.historico).set_index("Turno")
     ac = pd.DataFrame(st.session_state.historico_acoes)
 
-    # DataFrame para exibição (Troca 0 por X)
-    df_display = df.astype(str).replace("0", "X").replace("0.0", "X")
+    # DataFrame de exibição: transforma 0 em X para o visual
+    df_display = df.astype(str).replace(["0", "0.0"], "X")
 
-    def formatar_tabela(styler):
+    def aplicar_estilos_cacheta(styler):
         for i in range(len(df)):
-            # Lógica: Encontrar o líder específico DESTE turno (desta linha)
-            max_na_linha = df.iloc[i].max()
+            # Encontra o valor mais alto apenas desta linha (turno)
+            max_turno = df.iloc[i].max()
             
             for col in df.columns:
                 pontos = df.iloc[i][col]
                 acao = ac.iloc[i][col]
                 
-                # Cores de fundo conforme a ação
-                bg_color = "#f1c40f" # Amarelo padrão (Desistiu)
-                text_color = "black"
-                
-                if acao == "Venceu":
-                    bg_color = "#2ecc71"
-                    text_color = "white"
-                elif acao == "Perdeu":
-                    bg_color = "#e74c3c"
-                    text_color = "white"
+                # Cores de fundo (Venceu=Verde, Perdeu=Vermelho, Desistiu=Amarelo)
+                bg = "#f1c40f"
+                tx = "black"
+                if acao == "Venceu": bg = "#2ecc71"; tx = "white"
+                elif acao == "Perdeu": bg = "#e74c3c"; tx = "white"
                 
                 estilos = {
-                    "background-color": bg_color,
-                    "color": text_color,
+                    "background-color": bg,
+                    "color": tx,
                     "font-weight": "bold",
-                    "text-align": "center", # Centralização garantida
-                    "vertical-align": "middle"
+                    "text-align": "center",
+                    "vertical-align": "middle",
+                    "height": "45px"
                 }
 
-                # 1. Destaque de Líder do Turno (Círculo Verde)
-                # Se o jogador tem a maior pontuação da linha e não está zerado
-                if pontos == max_na_linha and pontos > 0:
-                    estilos["border"] = "3px solid #00ff00"
-                    estilos["border-radius"] = "15px" # Efeito arredondado na célula
+                # Regra: Líder do Turno (Borda/Círculo Verde)
+                if pontos == max_turno and pontos > 0:
+                    estilos["border"] = "4px solid #00ff00"
+                    estilos["border-radius"] = "10px"
 
-                # 2. Cor do número para 1 ou 2 pontos (Vermelho)
+                # Regra: Número em Vermelho Escuro (1 ou 2 pontos)
                 if pontos in [1, 2]:
-                    estilos["color"] = "#8b0000" 
+                    estilos["color"] = "#8b0000"
 
-                # 3. Estilo para o X (Zerado)
+                # Regra: X Vermelho (Zerado)
                 if pontos == 0:
-                    estilos["color"] = "#ff0000"
-                    estilos["font-size"] = "1.2em"
+                    estilos["color"] = "#000000" # Cor do caractere X
+                    estilos["font-size"] = "1.3em"
 
                 styler.set_properties(subset=pd.IndexSlice[[df.index[i]], [col]], **estilos)
         return styler
 
-    # Aplicar estilos e centralizar cabeçalhos (th)
-    sty = df_display.style.pipe(formatar_tabela).set_table_styles(
-        [
-            {"selector": "th", "props": [("text-align", "center"), ("background-color", "#f8f9fa")]},
-            {"selector": "td", "props": [("text-align", "center")]}
-        ]
-    )
+    # Aplicar os estilos CSS na tabela do Streamlit
+    sty = df_display.style.pipe(aplicar_estilos_cacheta).set_table_styles([
+        {"selector": "th", "props": [("text-align", "center"), ("vertical-align", "middle"), ("color", "black"), ("font-weight", "bold")]},
+        {"selector": "th.row_heading", "props": [("text-align", "center"), ("color", "black")]},
+        {"selector": "td", "props": [("text-align", "center"), ("vertical-align", "middle")]}
+    ])
 
     st.table(sty)
 
-    # Gráfico de Evolução
-    st.subheader("📈 Evolução das Pontuações")
+    # Gráfico Plotly
+    st.subheader("📈 Gráfico de Pontuação")
     dm = df.reset_index().melt(id_vars="Turno", var_name="Jogador", value_name="Pontos")
     st.plotly_chart(px.line(dm, x="Turno", y="Pontos", color="Jogador", markers=True), use_container_width=True)
+
+else:
+    st.info("Aguardando o primeiro turno para gerar o placar.")
