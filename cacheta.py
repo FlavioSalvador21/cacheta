@@ -58,7 +58,6 @@ def excluir(nome):
     salvar()
 
 def finalizar_turno():
-    selecoes = {}
     vencedores = [j["nome"] for j in st.session_state.jogadores if st.session_state.get(f"sel_{j['nome']}") == "Venceu"]
 
     if len(vencedores) != 1:
@@ -94,7 +93,7 @@ def novo_jogo():
     salvar()
 
 # =====================================================
-# UI - Interface
+# UI - Interface Principal
 # =====================================================
 
 st.title("🃏 CACHETA MANAGER")
@@ -131,7 +130,7 @@ b1.button("✅ Finalizar Turno", on_click=finalizar_turno, use_container_width=T
 b2.button("🔄 Novo Jogo", on_click=novo_jogo, use_container_width=True)
 
 # =====================================================
-# Placar com Formatação Especial
+# Placar com Lógica de Liderança por Turno
 # =====================================================
 
 if st.session_state.historico:
@@ -140,42 +139,48 @@ if st.session_state.historico:
     df = pd.DataFrame(st.session_state.historico).set_index("Turno")
     ac = pd.DataFrame(st.session_state.historico_acoes)
 
-    # Criamos uma versão do DF para exibição (com o X no lugar do 0)
-    df_display = df.astype(str).replace("0", "X")
+    # DataFrame para exibição (Troca 0 por X)
+    df_display = df.astype(str).replace("0", "X").replace("0.0", "X")
 
     def formatar_tabela(styler):
-        # Encontrar maior pontuação atual para o círculo verde
-        maior_pontuacao = df.max().max()
-
         for i in range(len(df)):
+            # Lógica: Encontrar o líder específico DESTE turno (desta linha)
+            max_na_linha = df.iloc[i].max()
+            
             for col in df.columns:
                 pontos = df.iloc[i][col]
                 acao = ac.iloc[i][col]
                 
-                # Cores de Fundo (Ações)
-                bg_color = "#f1c40f" # Amarelo (Desistiu)
+                # Cores de fundo conforme a ação
+                bg_color = "#f1c40f" # Amarelo padrão (Desistiu)
                 text_color = "black"
-                if acao == "Venceu": bg_color = "#2ecc71"; text_color = "white"
-                elif acao == "Perdeu": bg_color = "#e74c3c"; text_color = "white"
+                
+                if acao == "Venceu":
+                    bg_color = "#2ecc71"
+                    text_color = "white"
+                elif acao == "Perdeu":
+                    bg_color = "#e74c3c"
+                    text_color = "white"
                 
                 estilos = {
                     "background-color": bg_color,
                     "color": text_color,
                     "font-weight": "bold",
-                    "text-align": "center",
-                    "border": "none"
+                    "text-align": "center", # Centralização garantida
+                    "vertical-align": "middle"
                 }
 
-                # Regra: Círculo Verde para quem tem mais pontos
-                if pontos == maior_pontuacao and pontos > 0:
+                # 1. Destaque de Líder do Turno (Círculo Verde)
+                # Se o jogador tem a maior pontuação da linha e não está zerado
+                if pontos == max_na_linha and pontos > 0:
                     estilos["border"] = "3px solid #00ff00"
-                    estilos["border-radius"] = "50%"
+                    estilos["border-radius"] = "15px" # Efeito arredondado na célula
 
-                # Regra: Cor do número para 1 ou 2 pontos
+                # 2. Cor do número para 1 ou 2 pontos (Vermelho)
                 if pontos in [1, 2]:
-                    estilos["color"] = "#8b0000" # Vermelho escuro para o número
-                
-                # Regra: X quando chega a 0
+                    estilos["color"] = "#8b0000" 
+
+                # 3. Estilo para o X (Zerado)
                 if pontos == 0:
                     estilos["color"] = "#ff0000"
                     estilos["font-size"] = "1.2em"
@@ -183,13 +188,17 @@ if st.session_state.historico:
                 styler.set_properties(subset=pd.IndexSlice[[df.index[i]], [col]], **estilos)
         return styler
 
-    # Exibição da tabela usando o DF de exibição (com X) mas as cores do original
+    # Aplicar estilos e centralizar cabeçalhos (th)
     sty = df_display.style.pipe(formatar_tabela).set_table_styles(
-        [{"selector": "th", "props": [("text-align", "center")]}]
+        [
+            {"selector": "th", "props": [("text-align", "center"), ("background-color", "#f8f9fa")]},
+            {"selector": "td", "props": [("text-align", "center")]}
+        ]
     )
 
     st.table(sty)
 
-    # Gráfico
+    # Gráfico de Evolução
+    st.subheader("📈 Evolução das Pontuações")
     dm = df.reset_index().melt(id_vars="Turno", var_name="Jogador", value_name="Pontos")
     st.plotly_chart(px.line(dm, x="Turno", y="Pontos", color="Jogador", markers=True), use_container_width=True)
