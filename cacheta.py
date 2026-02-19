@@ -1,193 +1,195 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import json, os
+import sqlite3
+import os
 
-st.set_page_config(page_title="CACHETA MANAGER - FLÁVIO", layout="wide")
+# Configuração da Página
+st.set_page_config(page_title="CACHETA SQL - FLÁVIO", layout="wide")
 
-ARQ = "cacheta_state.json"
+DB_NAME = "cacheta_dados.db"
 
 # =====================================================
-# Persistência de Dados
+# FUNÇÕES DE BANCO DE DADOS (SQLITE)
 # =====================================================
 
-def salvar():
-    with open(ARQ, "w") as f:
-        json.dump({
-            "jogadores": st.session_state.jogadores,
-            "turno": st.session_state.turno,
-            "historico": st.session_state.historico,
-            "acoes": st.session_state.historico_acoes
-        }, f)
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    # Tabela de Jogadores (Estado Atual)
+    c.execute('''CREATE TABLE IF NOT EXISTS jogadores 
+                 (nome TEXT PRIMARY KEY, pontos INTEGER, ordem INTEGER, pago BOOLEAN)''')
+    # Tabela de Histórico (Registros de todos os turnos)
+    c.execute('''CREATE TABLE IF NOT EXISTS historico 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, turno INTEGER, nome TEXT, pontos_resultantes INTEGER, acao TEXT)''')
+    conn.commit()
+    conn.close()
 
-def carregar():
-    if os.path.exists(ARQ):
-        try:
-            with open(ARQ) as f:
-                d = json.load(f)
-                st.session_state.jogadores = d.get("jogadores", [])
-                st.session_state.turno = d.get("turno", 1)
-                st.session_state.historico = d.get("historico", [])
-                st.session_state.historico_acoes = d.get("acoes", [])
-        except:
-            pass
+def salvar_jogador_db(nome, pontos, ordem, pago):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO jogadores VALUES (?, ?, ?, ?)", (nome, pontos, ordem, pago))
+    conn.commit()
+    conn.close()
+
+def registrar_turno_db(turno, nome, pontos, acao):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("INSERT INTO historico (turno, nome, pontos_resultantes, acao) VALUES (?, ?, ?, ?)", 
+              (turno, nome, pontos, acao))
+    conn.commit()
+    conn.close()
+
+def carregar_dados_db():
+    conn = sqlite3.connect(DB_NAME)
+    # Carregar Jogadores
+    jogadores_df = pd.read_sql_query("SELECT * FROM jogadores", conn)
+    # Carregar Histórico para reconstruir session_state se necessário
+    historico_df = pd.read_sql_query("SELECT * FROM historico", conn)
+    conn.close()
+    return jogadores_df, historico_df
+
+def limpar_banco_novo_jogo():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("UPDATE jogadores SET pontos = 10, pago = 0")
+    c.execute("DELETE FROM historico")
+    conn.commit()
+    conn.close()
+
+# =====================================================
+# ESTADO INICIAL
+# =====================================================
+
+init_db()
 
 if "init" not in st.session_state:
-    st.session_state.jogadores = []
-    st.session_state.turno = 1
+    j_df, h_df = carregar_dados_db()
+    st.session_state.jogadores = j_df.to_dict('records')
+    st.session_state.turno = int(h_df['turno'].max() + 1) if not h_df.empty else 1
+    
+    # Reconstruir histórico para os gráficos
     st.session_state.historico = []
     st.session_state.historico_acoes = []
-    carregar()
+    
+    if not h_df.empty:
+        for t in range(1, int(h_df['turno'].max() + 1)):
+            turno_data = h_df[h_df['turno'] == t]
+            st.session_state.historico.append({**{"Turno": t}, **dict(zip(turno_data['nome'], turno_data['pontos_resultantes']))})
+            st.session_state.historico_acoes.append(dict(zip(turno_data['nome'], turno_data['acao'])))
+            
     st.session_state.init = True
 
 # =====================================================
-# Funções de Lógica
+# LÓGICA DE JOGO
 # =====================================================
 
 def adicionar():
     nome = st.session_state.novo_nome
-    if not nome: return
-    st.session_state.jogadores.append({
-        "nome": nome, "pontos": 10, "ordem": len(st.session_state.jogadores) + 1, "pago": False
-    })
-    st.session_state.novo_nome = ""
-    salvar()
-
-def excluir(nome):
-    st.session_state.jogadores = [j for j in st.session_state.jogadores if j["nome"] != nome]
-    salvar()
+    if nome:
+        salvar_jogador_db(nome, 10, len(st.session_state.jogadores)+1, False)
+        st.session_state.jogadores.append({"nome": nome, "pontos": 10, "ordem": len(st.session_state.jogadores)+1, "pago": False})
+        st.session_state.novo_nome = ""
 
 def finalizar_turno():
     vencedores = [j["nome"] for j in st.session_state.jogadores if st.session_state.get(f"sel_{j['nome']}") == "Venceu"]
     if len(vencedores) != 1:
-        st.warning("Selecione exatamente 1 vencedor.")
+        st.error("Selecione exatamente 1 vencedor.")
         return
 
-    linha = {"Turno": st.session_state.turno}
+    linha_pontos = {"Turno": st.session_state.turno}
     linha_acoes = {}
 
     for j in st.session_state.jogadores:
         nome = j["nome"]
-        key_sel = f"sel_{nome}"
-        acao = st.session_state.get(key_sel) or "Desistiu"
+        acao = st.session_state.get(f"sel_{nome}") or "Desistiu"
         
-        # Processa pontos
         if acao == "Perdeu": j["pontos"] -= 2
         elif acao == "Desistiu": j["pontos"] -= 1
         j["pontos"] = max(j["pontos"], 0)
         
-        linha[nome] = j["pontos"]
+        # SALVAR NO BANCO DE DADOS (SQL)
+        registrar_turno_db(st.session_state.turno, nome, j["pontos"], acao)
+        salvar_jogador_db(j["nome"], j["pontos"], j["ordem"], j["pago"])
+        
+        linha_pontos[nome] = j["pontos"]
         linha_acoes[nome] = acao
+        st.session_state[f"sel_{nome}"] = None # Reset visual da ação
 
-        # RESET DA AÇÃO: Volta para None (vazio) para o próximo turno
-        st.session_state[key_sel] = None
-
-    st.session_state.historico.append(linha)
+    st.session_state.historico.append(linha_pontos)
     st.session_state.historico_acoes.append(linha_acoes)
     st.session_state.turno += 1
-    salvar()
-
-def novo_jogo():
-    for j in st.session_state.jogadores:
-        j["pontos"] = 10
-        j["pago"] = False # Pagamento reseta SÓ aqui
-    st.session_state.turno = 1
-    st.session_state.historico = []
-    st.session_state.historico_acoes = []
-    salvar()
 
 # =====================================================
-# UI - Interface e CSS
+# UI
 # =====================================================
 
-st.title("🃏 CACHETA MANAGER")
+st.title("🃏 CACHETA SQL DATABASE")
 
-st.markdown("""
-    <style>
-    .stTable td, .stTable th {
-        text-align: center !important;
-        vertical-align: middle !important;
-        height: 60px !important;
-    }
-    .stTable th {
-        color: white !important;
-        background-color: #0E1117 !important;
-        font-weight: bold !important;
-        font-size: 16px !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# CSS para centralização e cabeçalhos
+st.markdown("""<style>
+    .stTable td, .stTable th { text-align: center !important; vertical-align: middle !important; height: 60px !important; }
+    .stTable th { color: white !important; background-color: #0E1117 !important; }
+</style>""", unsafe_allow_html=True)
 
-with st.expander("➕ Gerenciar Jogadores"):
-    c_a1, c_a2 = st.columns([3, 1])
-    c_a1.text_input("Nome", key="novo_nome", label_visibility="collapsed")
-    c_a2.button("Adicionar", on_click=adicionar, use_container_width=True)
+with st.expander("👤 Gerenciar Jogadores"):
+    c1, c2 = st.columns([3,1])
+    c1.text_input("Nome", key="novo_nome")
+    c2.button("Adicionar", on_click=adicionar)
 
 st.markdown("---")
-h1, h2, h3, h4, h5 = st.columns([2, 1, 2, 1, 1])
-h1.write("**Jogador**"); h2.write("**Ordem**"); h3.write("**Resultado**"); h4.write("**Pago?**"); h5.write("**Excluir**")
-
-st.session_state.jogadores = sorted(st.session_state.jogadores, key=lambda x: x["ordem"])
+h = st.columns([2, 1, 2, 1, 1])
+cols = ["Jogador", "Ordem", "Resultado", "Pago?", "Ação"]
+for i, col in enumerate(h): col.write(f"**{cols[i]}**")
 
 for j in st.session_state.jogadores:
     c1, c2, c3, c4, c5 = st.columns([2, 1, 2, 1, 1])
-    c1.write(f"**{j['nome']}**")
+    c1.write(j["nome"])
     j["ordem"] = c2.number_input("", value=j["ordem"], key=f"ord_{j['nome']}", label_visibility="collapsed")
-    
-    # Selectbox que será resetado pela função finalizar_turno
     c3.selectbox("", [None, "Venceu", "Perdeu", "Desistiu"], key=f"sel_{j['nome']}", label_visibility="collapsed")
     
-    # Checkbox de pagamento que PERSISTE até o Novo Jogo
-    pago_db = j.get("pago", False)
-    if c4.checkbox("Pago", value=pago_db, key=f"pago_chk_{j['nome']}") != pago_db:
-        j["pago"] = not pago_db
-        salvar()
-        
+    # Pagamento Persistente no SQL
+    novo_pago = c4.checkbox("Sim", value=j["pago"], key=f"pago_{j['nome']}")
+    if novo_pago != j["pago"]:
+        j["pago"] = novo_pago
+        salvar_jogador_db(j["nome"], j["pontos"], j["ordem"], j["pago"])
+
     if c5.button("🗑", key=f"del_{j['nome']}"):
-        excluir(j["nome"])
+        conn = sqlite3.connect(DB_NAME)
+        conn.execute("DELETE FROM jogadores WHERE nome = ?", (j["nome"],))
+        conn.commit()
+        conn.close()
         st.rerun()
 
-st.markdown("---")
-b1, b2 = st.columns(2)
-b1.button("✅ Finalizar Turno", on_click=finalizar_turno, use_container_width=True)
-b2.button("🔄 Novo Jogo", on_click=novo_jogo, use_container_width=True)
+st.button("✅ Finalizar Turno", on_click=finalizar_turno, use_container_width=True)
+if st.button("🔄 Novo Jogo", use_container_width=True):
+    limpar_banco_novo_jogo()
+    st.rerun()
 
 # =====================================================
-# Placar Dinâmico
+# TABELA E GRÁFICO
 # =====================================================
 
 if st.session_state.historico:
-    st.subheader("📊 Placar por Turno")
     df = pd.DataFrame(st.session_state.historico).set_index("Turno")
     ac = pd.DataFrame(st.session_state.historico_acoes)
-    df_display = df.astype(str).replace(["0", "0.0"], "X")
-
-    def aplicar_estilos(styler):
+    
+    def style_cacheta(styler):
         for i in range(len(df)):
-            max_turno = df.iloc[i].max()
+            max_v = df.iloc[i].max()
             for col in df.columns:
-                pontos = df.iloc[i][col]
                 acao = ac.iloc[i][col]
                 bg = "#f1c40f"; tx = "black"
                 if acao == "Venceu": bg = "#2ecc71"; tx = "white"
                 elif acao == "Perdeu": bg = "#e74c3c"; tx = "white"
                 
-                estilos = {"background-color": bg, "color": tx, "font-weight": "bold", "text-align": "center", "vertical-align": "middle"}
-
-                if pontos == max_turno and pontos > 0:
-                    estilos["border"] = "4px solid #00ff00"; estilos["border-radius"] = "12px"
-
-                if pontos in [1, 2]:
-                    estilos["color"] = "#FF0000"; estilos["font-size"] = "1.3em"; estilos["text-shadow"] = "1px 1px 1px rgba(0,0,0,0.2)"
-
-                if pontos == 0:
-                    estilos["color"] = "black"; estilos["font-size"] = "1.5em"
-
-                styler.set_properties(subset=pd.IndexSlice[[df.index[i]], [col]], **estilos)
+                est = {"background-color": bg, "color": tx, "font-weight": "bold"}
+                if df.iloc[i][col] == max_v and max_v > 0:
+                    est["border"] = "4px solid #00ff00"; est["border-radius"] = "10px"
+                if df.iloc[i][col] in [1, 2]: est["color"] = "#FF0000"
+                
+                styler.set_properties(subset=pd.IndexSlice[[df.index[i]], [col]], **est)
         return styler
 
-    st.table(df_display.style.pipe(aplicar_estilos))
-    
-    st.subheader("📈 Evolução da Partida")
-    dm = df.reset_index().melt(id_vars="Turno", var_name="Jogador", value_name="Points")
-    st.plotly_chart(px.line(dm, x="Turno", y="Points", color="Jogador", markers=True), use_container_width=True)
+    st.table(df.astype(str).replace(["0", "0.0"], "X").style.pipe(style_cacheta))
+    st.plotly_chart(px.line(df.reset_index().melt(id_vars="Turno"), x="Turno", y="value", color="variable", markers=True))
