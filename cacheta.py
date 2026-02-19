@@ -6,7 +6,7 @@ import plotly.express as px
 st.set_page_config(page_title="CACHETA MANAGER - FLÁVIO", layout="wide")
 
 # =====================================================
-# ESTADO INICIAL (Memória temporária do navegador)
+# ESTADO INICIAL
 # =====================================================
 if "jogadores" not in st.session_state:
     st.session_state.jogadores = []
@@ -45,7 +45,7 @@ def finalizar_turno():
         
         linha_pontos[nome] = j["pontos"]
         linha_acoes[nome] = acao
-        st.session_state[key_sel] = None # Volta para "vazio" o seletor
+        st.session_state[key_sel] = None 
 
     st.session_state.historico.append(linha_pontos)
     st.session_state.historico_acoes.append(linha_acoes)
@@ -54,7 +54,7 @@ def finalizar_turno():
 def novo_jogo():
     for j in st.session_state.jogadores:
         j["pontos"] = 10
-        j["pago"] = False # O pagamento só reseta aqui
+        j["pago"] = False 
     st.session_state.turno = 1
     st.session_state.historico = []
     st.session_state.historico_acoes = []
@@ -64,7 +64,6 @@ def novo_jogo():
 # =====================================================
 st.title("🃏 CACHETA MANAGER")
 
-# CSS para centralização total e cabeçalhos brancos
 st.markdown("""
     <style>
     .stTable td, .stTable th {
@@ -98,8 +97,10 @@ for j in st.session_state.jogadores:
     j["ordem"] = c2.number_input("", value=j["ordem"], key=f"ord_{j['nome']}", label_visibility="collapsed")
     c3.selectbox("", [None, "Venceu", "Perdeu", "Desistiu"], key=f"sel_{j['nome']}", label_visibility="collapsed")
     j["pago"] = c4.checkbox("Sim", value=j["pago"], key=f"pago_{j['nome']}")
+    
+    # LINHA CORRIGIDA ABAIXO
     if c5.button("🗑", key=f"del_{j['nome']}"):
-        st.session_state.jogadores = [jog para jog in st.session_state.jogadores if jog["nome"] != j["nome"]]
+        st.session_state.jogadores = [jog for jog in st.session_state.jogadores if jog["nome"] != j["nome"]]
         st.rerun()
 
 st.markdown("---")
@@ -129,9 +130,3 @@ if st.session_state.historico:
                 if pts == max_v and max_v > 0:
                     est["border"] = "4px solid #00ff00"; est["border-radius"] = "10px"
                 if pts in [1, 2]:
-                    est["color"] = "#FF0000"; est["font-size"] = "1.3em" # Vermelho forte
-                styler.set_properties(subset=pd.IndexSlice[[df.index[i]], [col]], **est)
-        return styler
-
-    st.table(df.astype(str).replace(["0", "0.0"], "X").style.pipe(style_placar))
-    st.plotly_chart(px.line(df.reset_index().melt(id_vars="Turno"), x="Turno", y="value", color="variable", markers=True), use_container_width=True)
