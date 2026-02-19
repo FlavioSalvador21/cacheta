@@ -92,21 +92,19 @@ def novo_jogo():
     salvar()
 
 # =====================================================
-# UI - Interface
+# Interface (UI) e CSS Injetado
 # =====================================================
 
 st.title("🃏 CACHETA MANAGER")
 
-# CSS para forçar centralização e cores brancas nos nomes/turnos
+# CSS para centralização absoluta e cabeçalhos brancos
 st.markdown("""
     <style>
-    /* Forçar centralização de conteúdo em todas as tabelas */
     .stTable td, .stTable th {
         text-align: center !important;
         vertical-align: middle !important;
         height: 60px !important;
     }
-    /* Nomes dos jogadores e números dos turnos em BRANCO */
     .stTable th {
         color: white !important;
         background-color: #0E1117 !important;
@@ -123,7 +121,7 @@ with st.expander("➕ Gerenciar Jogadores"):
 
 st.markdown("---")
 h1, h2, h3, h4, h5 = st.columns([2, 1, 2, 1, 1])
-h1.write("**Jogador**"); h2.write("**Ordem**"); h3.write("**Resultado**"); h4.write("**Pago?**"); h5.write("**Excluir**")
+h1.write("**Jogador**"); h2.write("**Ordem**"); h3.write("**Ação Turno**"); h4.write("**Pago?**"); h5.write("**Excluir**")
 
 st.session_state.jogadores = sorted(st.session_state.jogadores, key=lambda x: x["ordem"])
 
@@ -145,10 +143,10 @@ for j in st.session_state.jogadores:
 st.markdown("---")
 b1, b2 = st.columns(2)
 b1.button("✅ Finalizar Turno", on_click=finalizar_turno, use_container_width=True)
-b2.button("🔄 Novo Jogo", on_click=novo_jogo, use_container_width=True)
+b2.button("🔄 Novo Jogo / Resetar Pagamentos", on_click=novo_jogo, use_container_width=True)
 
 # =====================================================
-# Placar e Estilização
+# Placar e Estilização Avançada
 # =====================================================
 
 if st.session_state.historico:
@@ -165,6 +163,7 @@ if st.session_state.historico:
                 pontos = df.iloc[i][col]
                 acao = ac.iloc[i][col]
                 
+                # Cores base por ação
                 bg = "#f1c40f"; tx = "black"
                 if acao == "Venceu": bg = "#2ecc71"; tx = "white"
                 elif acao == "Perdeu": bg = "#e74c3c"; tx = "white"
@@ -177,19 +176,21 @@ if st.session_state.historico:
                     "vertical-align": "middle"
                 }
 
-                # Círculo verde para o líder do turno
+                # LÍDER DO TURNO: Borda verde
                 if pontos == max_turno and pontos > 0:
                     estilos["border"] = "4px solid #00ff00"
                     estilos["border-radius"] = "12px"
 
-                # Números 1 e 2 em Vermelho Escuro
+                # ALERTA DE ROÇA: 1 ou 2 pontos em Vermelho Forte
                 if pontos in [1, 2]:
-                    estilos["color"] = "#8b0000"
+                    estilos["color"] = "#FF0000"  # Vermelho Vivo
+                    estilos["font-size"] = "1.3em"
+                    estilos["text-shadow"] = "1px 1px 1px rgba(0,0,0,0.2)"
 
-                # X centralizado para zerados
+                # X DE ELIMINAÇÃO: Zerados
                 if pontos == 0:
                     estilos["color"] = "black"
-                    estilos["font-size"] = "1.4em"
+                    estilos["font-size"] = "1.5em"
 
                 styler.set_properties(subset=pd.IndexSlice[[df.index[i]], [col]], **estilos)
         return styler
@@ -201,3 +202,6 @@ if st.session_state.historico:
     st.subheader("📈 Evolução da Partida")
     dm = df.reset_index().melt(id_vars="Turno", var_name="Jogador", value_name="Pontos")
     st.plotly_chart(px.line(dm, x="Turno", y="Pontos", color="Jogador", markers=True), use_container_width=True)
+
+else:
+    st.info("Aguardando o primeiro turno para gerar o placar.")
